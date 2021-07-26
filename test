@@ -1,0 +1,433 @@
+--
+plugins {
+    id 'com.android.application'
+    id 'kotlin-android'
+    id 'org.jetbrains.kotlin.plugin.serialization' version '1.4.10'
+}
+
+android {
+    compileSdkVersion 30
+
+    defaultConfig {
+        applicationId "com.example.testapplication"
+        minSdkVersion 22
+        targetSdkVersion 30
+        versionCode 1
+        versionName "1.0"
+
+        testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_1_8
+        targetCompatibility JavaVersion.VERSION_1_8
+    }
+    kotlinOptions {
+        jvmTarget = '1.8'
+    }
+    buildFeatures {
+        viewBinding true
+    }
+}
+
+dependencies {
+
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"
+    implementation 'androidx.core:core-ktx:1.3.1'
+    implementation 'androidx.appcompat:appcompat:1.2.0'
+    implementation 'com.google.android.material:material:1.2.1'
+    implementation 'androidx.constraintlayout:constraintlayout:2.0.1'
+    implementation 'androidx.navigation:navigation-fragment-ktx:2.3.0'
+    implementation 'androidx.navigation:navigation-ui-ktx:2.3.0'
+    implementation 'androidx.annotation:annotation:1.1.0'
+    implementation 'androidx.lifecycle:lifecycle-livedata-ktx:2.2.0'
+    implementation 'androidx.lifecycle:lifecycle-viewmodel-ktx:2.2.0'
+    implementation "org.jetbrains.kotlinx:kotlinx-serialization-json:1.0.1"
+
+    def retrofit_version = "2.9.0"
+    implementation "com.squareup.retrofit2:retrofit:$retrofit_version"
+    implementation "com.squareup.retrofit2:converter-moshi:$retrofit_version"
+    implementation "com.squareup.okhttp3:logging-interceptor:4.9.0"
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.4.1")
+
+    testImplementation 'junit:junit:4.+'
+    androidTestImplementation 'androidx.test.ext:junit:1.1.2'
+    androidTestImplementation 'androidx.test.espresso:espresso-core:3.3.0'
+}
+--
+
+package com.example.testapplication
+
+import android.app.PendingIntent
+import android.content.Intent
+import android.content.IntentFilter
+import android.nfc.NfcAdapter
+import androidx.appcompat.app.AppCompatActivity
+import android.os.Bundle
+import android.util.Log
+import android.view.View
+import android.widget.Toast
+import androidx.lifecycle.ViewModelProvider
+import com.example.testapplication.databinding.ActivityLoginBinding
+import retrofit2.Response
+
+class LoginActivity: AppCompatActivity(), View.OnClickListener {
+
+    private var nfcAdapter: NfcAdapter? = null
+    private var pendingIntent: PendingIntent? = null
+    private var intentFilters: Array<IntentFilter>? = null
+    private var techLists: Array<Array<String>>? = null
+    private lateinit var viewModel: UserViewModel
+
+    private lateinit var binding: ActivityLoginBinding
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = ActivityLoginBinding.inflate(layoutInflater)
+        val view = binding.root
+        setContentView(view)
+
+        viewModel = ViewModelProvider(this).get(UserViewModel::class.java)
+
+        val intent = Intent(this, javaClass).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        pendingIntent = PendingIntent.getActivity(this, 0, intent, 0)
+
+        // 受け取るIntentを指定
+        intentFilters = arrayOf(IntentFilter(NfcAdapter.ACTION_NDEF_DISCOVERED))
+
+        // 反応するタグの種類を指定
+        techLists = arrayOf(
+            arrayOf(android.nfc.tech.Ndef::class.java.name),
+            arrayOf(android.nfc.tech.NdefFormatable::class.java.name))
+
+        nfcAdapter = NfcAdapter.getDefaultAdapter(this)
+        if (nfcAdapter == null) {
+            Toast.makeText(this, "NFC is not available", Toast.LENGTH_LONG).show()
+            //finish()
+            //return
+        }
+
+        binding.button.setOnClickListener(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        // NFCタグの検出を有効化
+        nfcAdapter?.enableForegroundDispatch(this, pendingIntent, intentFilters, techLists)
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+
+        // タグのIDを取得
+        val tagId: ByteArray = intent?.getByteArrayExtra(NfcAdapter.EXTRA_ID) ?: return
+
+        val list = ArrayList<String>()
+        for(byte in tagId) {
+            list.add(String.format("%02X", byte.toInt() and 0xFF))
+        }
+
+        list.toString()
+    }
+
+    override fun onClick(p0: View?) {
+
+        var userResult: Response<UserModel> = viewModel.getUserInfo("")
+        if (userResult.isSuccessful) {
+            Log.d("TEST", userResult.body()?.userId.toString())
+        } else {
+            Log.d("userResult", userResult.raw().code.toString())
+        }
+
+        val intent = Intent(this, ListViewActivity::class.java)
+        startActivity(intent)
+    }
+}
+
+--
+
+package com.example.testapplication
+
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class KeyModel(
+    val no: String = "",
+    val key: String = "",
+)
+
+--
+
+package com.example.testapplication
+
+import android.view.LayoutInflater
+import android.view.ViewGroup
+import androidx.recyclerview.widget.RecyclerView
+
+class KeyRecyclerViewAdapter(val list: List<KeyModel>): RecyclerView.Adapter<KeyViewHolder>() {
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): KeyViewHolder {
+        val itemView = LayoutInflater.from(parent.context).inflate(R.layout.list_item, parent, false)
+        return KeyViewHolder(itemView)
+    }
+
+    override fun onBindViewHolder(holder: KeyViewHolder, position: Int) {
+        holder.noText.text = list[position].no
+        holder.keyText.text = list[position].key
+    }
+    override fun getItemCount(): Int = list.size
+}
+
+--
+
+package com.example.testapplication
+
+import android.view.View
+import android.widget.TextView
+import androidx.recyclerview.widget.RecyclerView
+
+class KeyViewHolder(itemView: View): RecyclerView.ViewHolder(itemView) {
+    val noText: TextView = itemView.findViewById(R.id.txtNo)
+    val keyText: TextView = itemView.findViewById(R.id.txtKey)
+}
+
+--
+
+package com.example.testapplication
+
+import android.util.Log
+import androidx.lifecycle.ViewModel
+import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
+import retrofit2.Response
+import retrofit2.Retrofit
+import retrofit2.converter.moshi.MoshiConverterFactory
+import retrofit2.http.GET
+import retrofit2.http.POST
+
+class KeyViewModel: ViewModel() {
+
+    fun getKeyInfo(): Response<List<KeyModel>> {
+
+        val client = OkHttpClient.Builder()
+            .build()
+
+        val key = Retrofit.Builder()
+            .baseUrl("https://raw.githubusercontent.com/onoka1122/")
+            .client(client)
+            .addConverterFactory(MoshiConverterFactory.create())
+            .build()
+            .create(KeyService::class.java)
+
+        var result = runBlocking {
+            key.getKeyInfo()
+        }
+        return result
+    }
+}
+
+interface KeyService {
+    @GET("test_post/main/db.json")
+    suspend fun getKeyInfo(
+    ): Response<List<KeyModel>>
+}
+
+--
+
+package com.example.testapplication
+
+import androidx.appcompat.app.AppCompatActivity
+import android.os.Bundle
+import android.util.Log
+import androidx.lifecycle.ViewModelProvider
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.example.testapplication.databinding.ActivityListViewBinding
+import retrofit2.Response
+
+class ListViewActivity : AppCompatActivity() {
+
+    private lateinit var viewModel: KeyViewModel
+
+    private lateinit var binding: ActivityListViewBinding
+
+    private lateinit var recyclerView: RecyclerView
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = ActivityListViewBinding.inflate(layoutInflater)
+        val view = binding.root
+        setContentView(view)
+
+        viewModel = ViewModelProvider(this).get(KeyViewModel::class.java)
+        var keyResult: Response<List<KeyModel>> = viewModel.getKeyInfo()
+        if (keyResult.isSuccessful) {
+            keyResult.body()?.forEach() {
+                Log.d("TEST", it.no)
+                Log.d("TEST", it.key)
+            }
+        } else {
+            Log.d("userResult", keyResult.raw().code.toString())
+        }
+
+        recyclerView = binding.listView
+        recyclerView.adapter = keyResult.body()?.let { KeyRecyclerViewAdapter(it) }
+        recyclerView.layoutManager = LinearLayoutManager(this)
+    }
+}
+
+--
+
+package com.example.testapplication
+
+import android.app.PendingIntent
+import android.content.Intent
+import android.content.IntentFilter
+import android.nfc.NfcAdapter
+import androidx.appcompat.app.AppCompatActivity
+import android.os.Bundle
+import android.util.Log
+import android.view.View
+import android.widget.Toast
+import androidx.lifecycle.ViewModelProvider
+import com.example.testapplication.databinding.ActivityLoginBinding
+import retrofit2.Response
+
+class LoginActivity: AppCompatActivity(), View.OnClickListener {
+
+    private var nfcAdapter: NfcAdapter? = null
+    private var pendingIntent: PendingIntent? = null
+    private var intentFilters: Array<IntentFilter>? = null
+    private var techLists: Array<Array<String>>? = null
+    private lateinit var viewModel: UserViewModel
+
+    private lateinit var binding: ActivityLoginBinding
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+
+        binding = ActivityLoginBinding.inflate(layoutInflater)
+        val view = binding.root
+        setContentView(view)
+
+        viewModel = ViewModelProvider(this).get(UserViewModel::class.java)
+
+        val intent = Intent(this, javaClass).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        pendingIntent = PendingIntent.getActivity(this, 0, intent, 0)
+
+        // 受け取るIntentを指定
+        intentFilters = arrayOf(IntentFilter(NfcAdapter.ACTION_NDEF_DISCOVERED))
+
+        // 反応するタグの種類を指定
+        techLists = arrayOf(
+            arrayOf(android.nfc.tech.Ndef::class.java.name),
+            arrayOf(android.nfc.tech.NdefFormatable::class.java.name))
+
+        nfcAdapter = NfcAdapter.getDefaultAdapter(this)
+        if (nfcAdapter == null) {
+            Toast.makeText(this, "NFC is not available", Toast.LENGTH_LONG).show()
+            //finish()
+            //return
+        }
+
+        binding.button.setOnClickListener(this)
+    }
+
+    override fun onResume() {
+        super.onResume()
+
+        // NFCタグの検出を有効化
+        nfcAdapter?.enableForegroundDispatch(this, pendingIntent, intentFilters, techLists)
+    }
+
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+
+        // タグのIDを取得
+        val tagId: ByteArray = intent?.getByteArrayExtra(NfcAdapter.EXTRA_ID) ?: return
+
+        val list = ArrayList<String>()
+        for(byte in tagId) {
+            list.add(String.format("%02X", byte.toInt() and 0xFF))
+        }
+
+        list.toString()
+    }
+
+    override fun onClick(p0: View?) {
+
+        var userResult: Response<UserModel> = viewModel.getUserInfo("")
+        if (userResult.isSuccessful) {
+            Log.d("TEST", userResult.body()?.userId.toString())
+        } else {
+            Log.d("userResult", userResult.raw().code.toString())
+        }
+
+        val intent = Intent(this, ListViewActivity::class.java)
+        startActivity(intent)
+    }
+}
+
+
+--
+
+package com.example.testapplication
+
+import kotlinx.serialization.Serializable
+
+@Serializable
+data class UserModel(
+    val userId: String = "",
+    val userName: String = "",
+    val serverTime: String = ""
+)
+
+--
+
+package com.example.testapplication
+
+import androidx.lifecycle.ViewModel
+import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
+import retrofit2.Response
+import retrofit2.Retrofit
+import retrofit2.converter.moshi.MoshiConverterFactory
+import retrofit2.http.GET
+
+class UserViewModel: ViewModel() {
+
+    fun getUserInfo(userId: String): Response<UserModel> {
+
+        val client = OkHttpClient.Builder()
+            .build()
+
+        val userService = Retrofit.Builder()
+            .baseUrl("https://raw.githubusercontent.com/onoka1122/")
+            .client(client)
+            .addConverterFactory(MoshiConverterFactory.create())
+            .build()
+            .create(UserService::class.java)
+
+        var result = runBlocking {
+            userService.getUserInfo()
+        }
+        return result
+    }
+}
+
+interface UserService {
+    @GET("test/main/db.json")
+    suspend fun getUserInfo(
+    ): Response<UserModel>
+}
+
+--
